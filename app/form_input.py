@@ -227,9 +227,15 @@ def go_to_confirm():
 def finalize_submission():
     total, max_score, rating10 = calc_score()
     st.session_state.result = (total, max_score, rating10)
+    st.session_state.final_scores = {
+        param: raw_slider_values[param] * weight
+        for section in parameter_groups.values()
+        for param, weight in section.items()
+    }
     st.session_state.stage = "finalized"
     if draft_file.exists():
         draft_file.unlink()
+
 
 def cancel_submission():
     st.session_state.stage = "start"
@@ -267,25 +273,34 @@ elif st.session_state.stage == "finalized" and st.session_state.result:
     </div>
     """, unsafe_allow_html=True)
 
-    # Export Options
-    st.write("### 💾 Export Options")
-    col1, col2 = st.columns(2)
+import io
 
-    # Calculate full weighted score again for export
-    final_scores = {param: raw_slider_values[param] * weight for section in parameter_groups.values() for param, weight in section.items()}
+# Export Options
+st.write("### 💾 Export Options")
+col1, col2 = st.columns(2)
 
-    with col1:
-        if st.button("📁 Save to CSV", key="csv_btn"):
-            df = pd.DataFrame([final_scores])
-            p = Path("data"); p.mkdir(exist_ok=True)
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            df.to_csv(p / f"inspection_{ts}.csv", index=False)
-            st.success(f"✅ Saved to data/inspection_{ts}.csv")
+# Calculate full weighted scores again
+final_scores = st.session_state.get("final_scores", {})
 
-    with col2:
-        if st.button("📦 Export as JSON", key="json_btn"):
-            p = Path("data"); p.mkdir(exist_ok=True)
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            with open(p / f"inspection_{ts}.json", "w") as f:
-                json.dump(final_scores, f, indent=2)
-            st.success(f"✅ Saved to data/inspection_{ts}.json")
+# Convert to DataFrame
+df = pd.DataFrame([final_scores])
+ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+with col1:
+    csv_buffer = io.StringIO()
+    df.to_csv(csv_buffer, index=False)
+    st.download_button(
+        label="📁 Download CSV",
+        data=csv_buffer.getvalue(),
+        file_name=f"inspection_{ts}.csv",
+        mime="text/csv"
+    )
+
+with col2:
+    json_data = json.dumps(final_scores, indent=2)
+    st.download_button(
+        label="📦 Download JSON",
+        data=json_data,
+        file_name=f"inspection_{ts}.json",
+        mime="application/json"
+    )
