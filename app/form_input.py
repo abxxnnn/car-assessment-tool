@@ -7,10 +7,8 @@ from pathlib import Path
 from utils import score_to_rating
 
 st.set_page_config(page_title="Used Car Inspection Form", layout="wide")
-
 st.title("🚗 Used Car Inspection Form")
 
-# Parameters grouped by category
 parameter_groups = {
     "1. Vehicle Identification & History": {
         "VIN matches registration/documents": 10,
@@ -187,7 +185,7 @@ parameter_groups = {
     }
 }
 
-# Load existing draft
+# Load saved draft if exists
 draft_file = Path("data/form_draft.json")
 if draft_file.exists():
     with open(draft_file, "r") as f:
@@ -195,147 +193,99 @@ if draft_file.exists():
 else:
     saved_data = {}
 
-# Input sliders
-scores = {}
+# Store raw slider values
+raw_slider_values = {}
 for section, items in parameter_groups.items():
     with st.expander(section, expanded=False):
         for param, weight in items.items():
             default_val = saved_data.get(param, 0)
-            score = st.slider(param, 0, 5, int(default_val), step=1)
-            scores[param] = score * weight
+            raw_val = st.slider(param, 0, 5, int(default_val), step=1)
+            raw_slider_values[param] = raw_val
 
-# Auto-save as draft
+# Auto-save raw values
 with open(draft_file, "w") as f:
-    draft_data = {param: int(scores[param] / weight) for section in parameter_groups.values() for param, weight in section.items()}
-    json.dump(draft_data, f)
+    json.dump(raw_slider_values, f)
 
-
-# ───────────────────────────────────────────
-# Submission State Management
-# ───────────────────────────────────────────
+# Setup session state
 if "stage" not in st.session_state:
-    st.session_state.stage = "start"   # can be: start, confirm, finalized
-
-# Helper to recalc score
-def calc():
-    total = sum(scores.values())
-    maximum = sum(w for grp in parameter_groups.values() for w in grp.values())
-    return total, maximum, round((total/maximum)*10, 1)
-
-# ───────────────────────────────────────────
-# SESSION STATE SETUP
-# ───────────────────────────────────────────
-if "stage" not in st.session_state:
-    st.session_state.stage = "start"    # stages: start → confirm → finalized
+    st.session_state.stage = "start"
 if "result" not in st.session_state:
     st.session_state.result = None
 
-# Helper to compute score
+# ────────────────────────────────────────────────
+# ✅ Score calculation logic (now correct)
+# ────────────────────────────────────────────────
 def calc_score():
-    total = sum(scores.values())
-    maximum = sum(w for grp in parameter_groups.values() for w in grp.values())
-    return total, maximum, round((total/maximum)*10, 1)
+    total = sum(raw_slider_values[param] * weight for section in parameter_groups.values() for param, weight in section.items())
+    max_score = sum(weight * 5 for section in parameter_groups.values() for weight in section.values())
+    normalized = round((total / max_score) * 10, 1)
+    return total, max_score, normalized
 
-# ───────────────────────────────────────────
-# Submission State & Callbacks
-# ───────────────────────────────────────────
-if "stage" not in st.session_state:
-    st.session_state.stage = "start"     # stages: start → confirm → finalized
-if "result" not in st.session_state:
-    st.session_state.result = None
-
-# Score calculation helper
-def calc_score():
-    total = sum(scores.values())
-    maximum = sum(w for grp in parameter_groups.values() for w in grp.values())
-    return total, maximum, round((total / maximum) * 10, 1)
-
-# Callback to move to confirm stage
 def go_to_confirm():
     st.session_state.stage = "confirm"
 
-# Callback to finalize submission
 def finalize_submission():
-    total, maximum, rating10 = calc_score()
-    st.session_state.result = (total, maximum, rating10)
+    total, max_score, rating10 = calc_score()
+    st.session_state.result = (total, max_score, rating10)
     st.session_state.stage = "finalized"
-    # clear draft
     if draft_file.exists():
         draft_file.unlink()
 
-# Callback to cancel and go back
 def cancel_submission():
     st.session_state.stage = "start"
 
-# ───────────────────────────────────────────
-# 1) START: only “Submit Inspection”
-# ───────────────────────────────────────────
-if st.session_state.stage == "start":
-    st.button(
-        "✅ Submit Inspection",
-        key="submit_btn",
-        on_click=go_to_confirm
-    )
+# ────────────────────────────────────────────────
+# UI State Logic
+# ────────────────────────────────────────────────
 
-# ───────────────────────────────────────────
-# 2) CONFIRM: only “Confirm” / “Cancel”
-# ───────────────────────────────────────────
+if st.session_state.stage == "start":
+    st.button("✅ Submit Inspection", key="submit_btn", on_click=go_to_confirm)
+
 elif st.session_state.stage == "confirm":
     st.warning("⚠️ Please confirm you want to submit this inspection.")
     c1, c2 = st.columns(2)
     with c1:
-        st.button(
-            "✅ Confirm Submission",
-            key="confirm_btn",
-            on_click=finalize_submission
-        )
+        st.button("✅ Confirm Submission", key="confirm_btn", on_click=finalize_submission)
     with c2:
-        st.button(
-            "❌ Cancel Submission",
-            key="cancel_btn",
-            on_click=cancel_submission
-        )
+        st.button("❌ Cancel Submission", key="cancel_btn", on_click=cancel_submission)
 
-# ───────────────────────────────────────────
-# 3) FINALIZED: show rating + exports
-# ───────────────────────────────────────────
 elif st.session_state.stage == "finalized" and st.session_state.result:
-    total, maximum, rating10 = st.session_state.result
-
-    # Display the final score and label
+    total, max_score, rating10 = st.session_state.result
     st.success(f"🎯 Final Score: {rating10} / 10")
-    st.info(f"🚦 Rating: {score_to_rating(total)}")
+    st.info(f"🚦 Rating: {score_to_rating(rating10)}")
 
-    # High‑contrast rating guide
+    # Rating Guide
     st.markdown("""
-<div style="background:#111;padding:16px;border-radius:6px;color:#eee;font-size:15px;">
-  <b>📊 Rating Guide & Instructions:</b><br><br>
-  Each parameter is rated from <b>0 to 5</b> and multiplied by its importance (weight). Final score is shown out of 10.<br><br>
+    <div style="background:#111;padding:16px;border-radius:6px;color:#eee;font-size:15px;">
+      <b>📊 Rating Guide:</b><br><br>
+      Each parameter is rated from <b>0 to 5</b> and multiplied by its weight. Final score is normalized to 10.<br><br>
+      <span style="color:#00bfff">8.6 – 10.0</span>: 🌟 Excellent (Almost like new)<br>
+      <span style="color:#00cc66">7.3 – 8.5</span>: ✅ Very Good<br>
+      <span style="color:#ffcc00">5.9 – 7.2</span>: 🟡 Good (Minor repairs needed)<br>
+      <span style="color:#ffa500">4.5 – 5.8</span>: ⚠️ Average (Significant repairs needed)<br>
+      <span style="color:#ff4d4d">Below 4.5</span>: ❌ Avoid unless very cheap
+    </div>
+    """, unsafe_allow_html=True)
 
-  <b>Rating Scale (based on total score):</b><br>
-  <span style="color:#00bfff">8.6 – 10.0</span>: 🌟 Excellent (Almost like new)<br>
-  <span style="color:#00cc66">7.3 – 8.5</span>: ✅ Very Good<br>
-  <span style="color:#ffcc00">5.9 – 7.2</span>: 🟡 Good (Minor repairs needed)<br>
-  <span style="color:#ffa500">4.5 – 5.8</span>: ⚠️ Average (Significant repairs needed)<br>
-  <span style="color:#ff4d4d">Below 4.5</span>: ❌ Avoid unless very cheap
-</div>
-""", unsafe_allow_html=True)
-
-
-    # Export options
+    # Export Options
     st.write("### 💾 Export Options")
-    e1, e2 = st.columns(2)
-    with e1:
+    col1, col2 = st.columns(2)
+
+    # Calculate full weighted score again for export
+    final_scores = {param: raw_slider_values[param] * weight for section in parameter_groups.values() for param, weight in section.items()}
+
+    with col1:
         if st.button("📁 Save to CSV", key="csv_btn"):
-            df = pd.DataFrame([scores])
+            df = pd.DataFrame([final_scores])
             p = Path("data"); p.mkdir(exist_ok=True)
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             df.to_csv(p / f"inspection_{ts}.csv", index=False)
             st.success(f"✅ Saved to data/inspection_{ts}.csv")
-    with e2:
+
+    with col2:
         if st.button("📦 Export as JSON", key="json_btn"):
             p = Path("data"); p.mkdir(exist_ok=True)
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             with open(p / f"inspection_{ts}.json", "w") as f:
-                json.dump(scores, f, indent=2)
+                json.dump(final_scores, f, indent=2)
             st.success(f"✅ Saved to data/inspection_{ts}.json")
