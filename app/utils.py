@@ -1,11 +1,11 @@
-def score_to_rating(score: float) -> str:
-    if score >= 950:
-        return "Excellent"
-    elif score >= 800:
-        return "Very Good"
-    elif score >= 650:
-        return "Good"
-    elif score >= 500:
-        return "Average"
+def score_to_rating(score_out_of_10: float) -> str:
+    if score_out_of_10 >= 8.6:
+        return "🌟 Excellent (Almost like new)"
+    elif score_out_of_10 >= 7.3:
+        return "✅ Very Good"
+    elif score_out_of_10 >= 5.9:
+        return "🟡 Good (Minor repairs needed)"
+    elif score_out_of_10 >= 4.5:
+        return "⚠️ Average (Significant repairs needed)"
     else:
-        return "Avoid"
+        return "❌ Avoid unless very cheap"
